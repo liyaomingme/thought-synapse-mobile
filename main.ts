@@ -103,7 +103,7 @@ class WordSphereMobileEngine {
         this.handleResize();
         this.setupTouchListeners();
 
-        // 强行转为 any 绕过一切 TS 校验
+        // @ts-ignore
         this.resizeObserver = new (window as any).ResizeObserver(() => this.handleResize());
         this.resizeObserver.observe(this.container);
     }
@@ -340,7 +340,6 @@ async function analyzeVaultData(app: App) {
         if (IntlAny.Segmenter) {
             const segmenter = new IntlAny.Segmenter('zh-CN', { granularity: 'word' });
             const iterator = segmenter.segment(cleanText);
-            // 极度安全的暴力绕过方式，绝不报 TS 编译错误
             segments = (Array as any).from(iterator);
         } else {
             const fallbackWords = cleanText.match(/[\u4e00-\u9fa5]{2,}|\b[a-zA-Z]{3,}\b/g) || [];
@@ -533,7 +532,15 @@ export default class MobileStatsPlugin extends Plugin {
         if (existingLeaves.length > 0) {
             leaf = existingLeaves[0];
         } else {
-            leaf = workspace.getRightLeaf(false) || workspace.getLeaf(false);
+            // 核心修改：在手机端强制寻找文件列表，并在下方切分区域！
+            const fileExplorerLeaves = workspace.getLeavesOfType('file-explorer');
+            if (fileExplorerLeaves.length > 0) {
+                // 如果左侧有文件列表，就在文件列表下方劈出一块
+                leaf = workspace.createLeafBySplit(fileExplorerLeaves[0], 'horizontal');
+            } else {
+                // 兜底方案：如果找不到文件列表，强制插入左侧边栏
+                leaf = workspace.getLeftLeaf(false) || workspace.getLeaf(false);
+            }
             await leaf.setViewState({ type: VIEW_TYPE_STATS_HEATMAP_MOBILE, active: true });
         }
         

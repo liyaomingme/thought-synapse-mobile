@@ -8,7 +8,6 @@ const STOP_WORDS = new Set([
     '也是', '一样', '知道', '觉得', '时候'
 ]);
 
-// 绝对保底文案：即使扫描出错，也绝不允许白屏
 const FALLBACK_WORDS = [
     {word: '液冷技术', value: 10}, {word: '热管理', value: 9}, {word: '自动化', value: 9},
     {word: '系统架构', value: 8}, {word: '储能', value: 8}, {word: '服务器', value: 7},
@@ -25,7 +24,7 @@ interface SphereNode {
     zRatio: number;
 }
 
-// --- 移动端专属：纯装饰级极简物理引擎 (零交互、纯匀速) ---
+// --- 移动端专属：纯装饰级极简物理引擎 ---
 class WordSphereDecorativeEngine {
     container: HTMLElement;
     canvas: HTMLCanvasElement;
@@ -35,12 +34,14 @@ class WordSphereDecorativeEngine {
     height: number = 0;
     tags: SphereNode[] = [];
     
-    // 自然匀速滚动
     velocityX = 0.0025; 
     velocityY = 0.0025;
 
     animationFrameId: number = 0;
     isActive = true;
+    
+    // 核心视觉重心偏移：不改DOM导致跳动，直接在渲染层将画面往下推！
+    visualOffsetY = 15; 
 
     constructor(container: HTMLElement, radius: number) {
         this.container = container;
@@ -145,7 +146,8 @@ class WordSphereDecorativeEngine {
 
             this.ctx.clearRect(0, 0, this.width, this.height);
             const cx = this.width / 2;
-            const cy = this.height / 2;
+            // 画布原点加入视觉偏移
+            const cy = (this.height / 2) + this.visualOffsetY;
 
             const colorNormal = getComputedColor('--text-normal', '#333333');
             const neutralLineColor = '128, 128, 128'; 
@@ -190,7 +192,9 @@ class WordSphereDecorativeEngine {
                 }
 
                 const depthScale = 0.6 + 0.5 * ((this.radius + tag.lz) / (2 * this.radius)); 
-                const baseTransform = `translate(-50%, -50%) translate3d(${tag.lx}px, ${tag.ly}px, 0px)`;
+                
+                // 字体坐标也加入完美的视觉偏移量
+                const baseTransform = `translate(-50%, -50%) translate3d(${tag.lx}px, ${tag.ly + this.visualOffsetY}px, 0px)`;
                 
                 tag.el.style.transform = `${baseTransform} scale(${depthScale})`;
                 tag.el.style.opacity = baseOpacity.toString();
@@ -245,7 +249,6 @@ async function analyzeDecorativeData(app: App) {
 
         for (const file of largestFiles) {
             const content = await app.vault.cachedRead(file);
-            
             const matches = content.match(/[\u4e00-\u9fa5]{2,5}/g) || [];
             
             for (const w of matches) {
@@ -256,17 +259,12 @@ async function analyzeDecorativeData(app: App) {
 
         const results = Array.from(wordData.entries())
             .sort((a, b) => b[1] - a[1])
-            // 核心修改 1：提取数量从 42 降为 32 个，制造充足的内部留白，解决拥挤问题
             .slice(0, 32) 
             .map(([word, value]) => ({ word, value }));
 
-        if (results.length < 15) {
-            return FALLBACK_WORDS;
-        }
-
+        if (results.length < 15) return FALLBACK_WORDS;
         return results;
     } catch (e) {
-        console.error("Topology Data Error: ", e);
         return FALLBACK_WORDS;
     }
 }
@@ -275,98 +273,130 @@ export default class MobileStatsPlugin extends Plugin {
     sphereEngine: WordSphereDecorativeEngine | null = null;
     injectedContainer: HTMLElement | null = null;
     cachedWords: {word: string, value: number}[] | null = null;
+    
+    // 丝滑驻留的核心监听器
+    mutationObserver: MutationObserver | null = null;
+    currentObserverTarget: HTMLElement | null = null;
 
     async onload() {
         this.app.workspace.onLayoutReady(async () => {
             this.cachedWords = await analyzeDecorativeData(this.app);
-            this.injectIntoFileExplorer();
-            
-            this.registerInterval(window.setInterval(() => {
-                this.injectIntoFileExplorer();
-            }, 1500));
+            this.observeAndInject();
         });
+
+        // 监听视图变动，确保随时附着
+        this.registerEvent(this.app.workspace.on('layout-change', () => {
+            this.observeAndInject();
+        }));
+        
+        // 当打开新文件时，同样极速重置检查
+        this.registerEvent(this.app.workspace.on('file-open', () => {
+            this.observeAndInject();
+        }));
     }
     
     async onunload() { 
         if (this.sphereEngine) this.sphereEngine.destroy();
         if (this.injectedContainer) this.injectedContainer.remove();
+        if (this.mutationObserver) this.mutationObserver.disconnect();
         this.cachedWords = null;
     }
     
-    async injectIntoFileExplorer() {
+    // 零延迟自愈构建方法
+    observeAndInject() {
         try {
             const fileExplorerLeaves = this.app.workspace.getLeavesOfType('file-explorer');
             if (fileExplorerLeaves.length === 0) return; 
 
             const fileExplorerContainer = fileExplorerLeaves[0].view.containerEl;
-            const navContainer = fileExplorerContainer.querySelector('.nav-files-container');
+            const navContainer = fileExplorerContainer.querySelector('.nav-files-container') as HTMLElement;
             if (!navContainer) return;
 
-            if (this.injectedContainer && document.body.contains(this.injectedContainer)) {
-                return; 
+            // 1. 如果还没构建寄生体，直接构建
+            if (!this.injectedContainer) {
+                this.buildContainer(navContainer);
             }
 
-            if (this.sphereEngine) this.sphereEngine.destroy();
+            // 2. 如果寄生体不在树里，瞬间补齐
+            if (!navContainer.contains(this.injectedContainer!)) {
+                navContainer.appendChild(this.injectedContainer!);
+            }
 
-            this.injectedContainer = document.createElement('div');
-            this.injectedContainer.className = 'mobile-parasitic-heatmap';
-            
-            // --- 核心更新 2：完美下坠居中黑魔法 ---
-            this.injectedContainer.setAttribute('style', `
-                width: 100%;
-                height: 250px; 
-                margin-top: 50px; /* 增加上方推力 */
-                margin-bottom: 0px; 
-                display: flex;
-                flex-shrink: 0; 
-                justify-content: center;
-                align-items: center;
-                position: relative;
-                background-color: transparent;
-                pointer-events: none;
-                /* 终极视觉校准：直接将渲染画面强行向下平移 35px，完美填补底部空白 */
-                transform: translateY(35px); 
-            `);
-
-            const heatmapDiv = this.injectedContainer.createDiv({ 
-                attr: { style: 'width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; overflow: hidden; position: relative;' } 
-            });
-
-            navContainer.appendChild(this.injectedContainer);
-            
-            const heatmapWords = this.cachedWords || FALLBACK_WORDS;
-            if (heatmapWords.length === 0) return;
-
-            const maxWordCount = heatmapWords[0].value;
-            // 核心修改 3：球体自身在容器内的物理半径加大，让分布更开阔
-            const baseRadius = Math.max((heatmapDiv.clientWidth / 2) * 0.85, 65); 
-
-            this.sphereEngine = new WordSphereDecorativeEngine(heatmapDiv, baseRadius);
-
-            heatmapWords.forEach(({word, value}) => {
-                const wordEl = document.createElement('div');
-                wordEl.innerText = word;
+            // 3. 开启基因级锁死：只要 Obsidian 敢删，瞬间原样粘回去（0帧延迟）
+            if (this.currentObserverTarget !== navContainer) {
+                if (this.mutationObserver) this.mutationObserver.disconnect();
                 
-                // 核心修改 4：字号整体调小一圈（11~21px），配合更少的词汇量，彻底解锁“高级松弛感”
-                const fontSize = Math.max(11, Math.min(21, 11 + (value/maxWordCount)*10));
-                const fontWeight = value > maxWordCount * 0.5 ? '700' : '400'; 
-
-                wordEl.setAttr("style", `
-                    font-family: "SimSun", "STSong", "Songti SC", serif;
-                    font-size: ${fontSize}px;
-                    font-weight: ${fontWeight};
-                    letter-spacing: 0.5px;
-                    white-space: nowrap;
-                    user-select: none;
-                    transform-origin: center center;
-                `);
+                this.mutationObserver = new MutationObserver(() => {
+                    if (this.injectedContainer && !navContainer.contains(this.injectedContainer)) {
+                        navContainer.appendChild(this.injectedContainer);
+                    }
+                });
                 
-                this.sphereEngine!.addTag(wordEl);
-            });
+                // 监听子节点的任何增删动作
+                this.mutationObserver.observe(navContainer, { childList: true });
+                this.currentObserverTarget = navContainer;
+            }
 
-            this.sphereEngine.startAnimation();
         } catch (e) {
-            console.error("Topology Render Error: ", e);
+            console.error("Topology Observer Error: ", e);
         }
+    }
+
+    // 独立出构建 UI 的方法，只在插件最初加载时跑一次
+    buildContainer(navContainer: HTMLElement) {
+        if (this.sphereEngine) this.sphereEngine.destroy();
+
+        this.injectedContainer = document.createElement('div');
+        this.injectedContainer.className = 'mobile-parasitic-heatmap';
+        
+        // 恢复最纯净、无任何跳动隐患的 CSS
+        this.injectedContainer.setAttribute('style', `
+            width: 100%;
+            height: 240px; 
+            margin: 15px 0;
+            display: flex;
+            flex-shrink: 0; 
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            background-color: transparent;
+            pointer-events: none;
+        `);
+
+        const heatmapDiv = this.injectedContainer.createDiv({ 
+            attr: { style: 'width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; overflow: hidden; position: relative;' } 
+        });
+
+        navContainer.appendChild(this.injectedContainer);
+        
+        const heatmapWords = this.cachedWords || FALLBACK_WORDS;
+        if (heatmapWords.length === 0) return;
+
+        const maxWordCount = heatmapWords[0].value;
+        const baseRadius = Math.max((heatmapDiv.clientWidth / 2) * 0.75, 55); 
+
+        this.sphereEngine = new WordSphereDecorativeEngine(heatmapDiv, baseRadius);
+
+        heatmapWords.forEach(({word, value}) => {
+            const wordEl = document.createElement('div');
+            wordEl.innerText = word;
+            
+            const fontSize = Math.max(11, Math.min(21, 11 + (value/maxWordCount)*10));
+            const fontWeight = value > maxWordCount * 0.5 ? '700' : '400'; 
+
+            wordEl.setAttr("style", `
+                font-family: "SimSun", "STSong", "Songti SC", serif;
+                font-size: ${fontSize}px;
+                font-weight: ${fontWeight};
+                letter-spacing: 0.5px;
+                white-space: nowrap;
+                user-select: none;
+                transform-origin: center center;
+            `);
+            
+            this.sphereEngine!.addTag(wordEl);
+        });
+
+        this.sphereEngine.startAnimation();
     }
 }

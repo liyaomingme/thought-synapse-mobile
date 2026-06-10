@@ -25,6 +25,7 @@ interface SphereNode {
     zRatio: number;
 }
 
+// --- 移动端专属：纯装饰级极简物理引擎 (零交互、纯匀速) ---
 class WordSphereDecorativeEngine {
     container: HTMLElement;
     canvas: HTMLCanvasElement;
@@ -34,6 +35,7 @@ class WordSphereDecorativeEngine {
     height: number = 0;
     tags: SphereNode[] = [];
     
+    // 自然匀速滚动
     velocityX = 0.0025; 
     velocityY = 0.0025;
 
@@ -238,14 +240,12 @@ async function analyzeDecorativeData(app: App) {
         const files = app.vault.getMarkdownFiles();
         if (files.length === 0) return FALLBACK_WORDS;
 
-        // 核心修复：按文件体积从大到小排序，提取前 20 篇“最丰富”的笔记，告别空笔记
         const largestFiles = files.sort((a, b) => b.stat.size - a.stat.size).slice(0, 20);
         const wordData = new Map<string, number>();
 
         for (const file of largestFiles) {
             const content = await app.vault.cachedRead(file);
             
-            // 极简暴力的正则提取：只提取 2到5个字的纯中文，彻底干掉任何英文和符号
             const matches = content.match(/[\u4e00-\u9fa5]{2,5}/g) || [];
             
             for (const w of matches) {
@@ -256,10 +256,9 @@ async function analyzeDecorativeData(app: App) {
 
         const results = Array.from(wordData.entries())
             .sort((a, b) => b[1] - a[1])
-            .slice(0, 42) // 提取 42 个词，保证球体圆润饱满
+            .slice(0, 42) 
             .map(([word, value]) => ({ word, value }));
 
-        // 终极防白屏：如果提取出来的词太少，直接用完美排版的保底词库！
         if (results.length < 15) {
             return FALLBACK_WORDS;
         }
@@ -281,7 +280,6 @@ export default class MobileStatsPlugin extends Plugin {
             this.cachedWords = await analyzeDecorativeData(this.app);
             this.injectIntoFileExplorer();
             
-            // 心跳守护：每 1.5 秒检查 DOM
             this.registerInterval(window.setInterval(() => {
                 this.injectIntoFileExplorer();
             }, 1500));
@@ -304,7 +302,7 @@ export default class MobileStatsPlugin extends Plugin {
             if (!navContainer) return;
 
             if (this.injectedContainer && document.body.contains(this.injectedContainer)) {
-                return; // 如果在，证明活着，直接返回
+                return; 
             }
 
             if (this.sphereEngine) this.sphereEngine.destroy();
@@ -312,18 +310,21 @@ export default class MobileStatsPlugin extends Plugin {
             this.injectedContainer = document.createElement('div');
             this.injectedContainer.className = 'mobile-parasitic-heatmap';
             
-            // 增加 flex-shrink: 0 防止被上面的长列表挤压变形
+            // --- 核心更新：强力压低重心，修复偏上视觉，确保四周等宽 ---
             this.injectedContainer.setAttribute('style', `
                 width: 100%;
-                height: 250px; 
-                margin: 25px 0;
+                /* 高度从250px微缩到220px，腾出左右呼吸感 */
+                height: 220px; 
+                /* 核心下压：增加顶部留白，抵消底部系统条视觉错位 */
+                margin-top: 45px; 
+                margin-bottom: 5px; 
                 display: flex;
                 flex-shrink: 0; 
                 justify-content: center;
                 align-items: center;
                 position: relative;
                 background-color: transparent;
-                pointer-events: none; /* 绝对防滑穿透 */
+                pointer-events: none;
             `);
 
             const heatmapDiv = this.injectedContainer.createDiv({ 
@@ -336,6 +337,7 @@ export default class MobileStatsPlugin extends Plugin {
             if (heatmapWords.length === 0) return;
 
             const maxWordCount = heatmapWords[0].value;
+            // 动态半径配合收紧的 height，球体会显得更居中
             const baseRadius = Math.max((heatmapDiv.clientWidth / 2) * 0.75, 55); 
 
             this.sphereEngine = new WordSphereDecorativeEngine(heatmapDiv, baseRadius);

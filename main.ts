@@ -7,7 +7,8 @@ const STOP_WORDS = new Set([
     'which', 'when', 'more', 'about', 'their', 'there', 'some', '因此', '通过',
     '可以', '一个', '没有', '我们', '什么', '这个', '如果是', '怎么', '如果',
     '可以说', '这样', '很多', '非常', '进行', '然后', '可能', '因为', '所以',
-    '各位', '谢谢', '由于', '其实', '只要', '目前', '开始'
+    '各位', '谢谢', '由于', '其实', '只要', '目前', '开始', '自己', '就是',
+    '需要', '问题', '产生', '使用'
 ]);
 
 interface SphereNode {
@@ -63,7 +64,6 @@ class WordSphereDecorativeEngine {
         const rect = this.container.getBoundingClientRect();
         if (rect.width === 0 || rect.height === 0) return;
         
-        // 居中缩小：保证四周有充分留白
         const safeRadiusWidth = (rect.width / 2) - 30; 
         const safeRadiusHeight = (rect.height / 2) - 30;
         let newRadius = Math.min(safeRadiusWidth, safeRadiusHeight);
@@ -95,28 +95,40 @@ class WordSphereDecorativeEngine {
         tagEl.style.willChange = 'transform, opacity, filter, color';
         tagEl.style.zIndex = '10'; 
         
-        const count = this.tags.length;
-        const offset = 2 / 35; // 控制在 35 个词以内，防拥挤
-        const increment = Math.PI * (3 - Math.sqrt(5));
-        const y = ((count * offset) - 1) + (offset / 2);
-        const r = Math.sqrt(1 - y * y);
-        const phi = (count % 35) * increment;
-        
-        const x = Math.cos(phi) * r * this.radius;
-        const cy = y * this.radius;
-        const z = Math.sin(phi) * r * this.radius;
-
         this.tags.push({
             el: tagEl,
-            lx: x, ly: cy, lz: z,
-            zRatio: z / this.radius,
+            lx: 0, ly: 0, lz: 0, // 初始坐标为0，等待统一计算
+            zRatio: 0,
         });
         
         this.container.appendChild(tagEl);
     }
 
+    // 核心修复：根据实际存在的词汇数量，重新计算斐波那契坐标，保证绝对居中均匀分布
+    initPositions() {
+        const total = this.tags.length;
+        if (total === 0) return;
+        
+        const offset = 2 / total; 
+        const increment = Math.PI * (3 - Math.sqrt(5));
+        
+        this.tags.forEach((tag, i) => {
+            const y = ((i * offset) - 1) + (offset / 2);
+            const r = Math.sqrt(1 - y * y);
+            const phi = i * increment;
+            
+            tag.lx = Math.cos(phi) * r * this.radius;
+            tag.ly = y * this.radius;
+            tag.lz = Math.sin(phi) * r * this.radius;
+            tag.zRatio = tag.lz / this.radius;
+        });
+    }
+
     startAnimation() {
         if (this.tags.length === 0) return;
+        
+        // 启动动画前，必须先初始化阵列坐标
+        this.initPositions();
 
         const getComputedColor = (cssVar: string, fallback: string) => {
             const val = getComputedStyle(document.body).getPropertyValue(cssVar).trim();
@@ -221,15 +233,12 @@ class WordSphereDecorativeEngine {
     }
 }
 
-// --- 移动端随机装饰词汇提取 (过滤代码，专注文章质感) ---
+// --- 移动端纯正中文词汇提纯 ---
 async function analyzeDecorativeData(app: App) {
     const files = app.vault.getMarkdownFiles();
-    // 打乱文件列表，随机选取 10 篇作为语料池
-    const sampleFiles = files.sort(() => 0.5 - Math.random()).slice(0, 10);
-    const wordsPool = new Set<string>();
-    const results = [];
+    const wordData = new Map<string, number>();
 
-    for (const file of sampleFiles) {
+    for (const file of files) {
         const content = await app.vault.cachedRead(file);
         // 暴力清洗所有代码块、URL、特殊符号
         const cleanText = content
@@ -253,26 +262,21 @@ async function analyzeDecorativeData(app: App) {
         for (const { segment, isWordLike } of segments) {
             if (!isWordLike) continue; 
             const w = segment.trim();
+            
+            // 核心过滤规则：长度至少为 2，并且必须包含中文！彻底封杀纯英文、代码和数字
             if (w.length < 2) continue;
             if (STOP_WORDS.has(w.toLowerCase())) continue;
+            if (!/[\u4e00-\u9fa5]/.test(w)) continue; 
 
-            // 核心过滤：剔除全是小写字母的词 (通常是代码变量如 json, github, api)
-            // 只保留中文，或者包含大写字母的专业名词
-            if (/^[a-z]+$/.test(w)) continue; 
-
-            if (!wordsPool.has(w)) {
-                wordsPool.add(w);
-                results.push({
-                    word: w,
-                    // 为装饰球赋予 1~10 的随机权重，制造错落有致的字号排版
-                    value: Math.floor(Math.random() * 10) + 1 
-                });
-            }
+            wordData.set(w, (wordData.get(w) || 0) + 1);
         }
     }
 
-    // 随机打乱并只取 30 个词汇，保证球体空灵不拥挤
-    return results.sort(() => 0.5 - Math.random()).slice(0, 30);
+    // 提取频率最高的 45 个词汇，确保星系饱满
+    return Array.from(wordData.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 45)
+        .map(([word, value]) => ({ word, value }));
 }
 
 export default class MobileStatsPlugin extends Plugin {
@@ -312,11 +316,10 @@ export default class MobileStatsPlugin extends Plugin {
         this.injectedContainer = document.createElement('div');
         this.injectedContainer.className = 'mobile-parasitic-heatmap';
         
-        // 核心 UI 重构：移除头部文字和图标，彻底变为纯装饰容器
-        // 高度减小，上下 margin 留白居中，最重要的是 pointer-events: none (手指完全穿透！)
+        // 容器高度调整为 260px 给饱满的星系腾出空间
         this.injectedContainer.setAttribute('style', `
             width: 100%;
-            height: 240px; 
+            height: 260px; 
             margin-top: 15px;
             margin-bottom: 20px;
             display: flex;
@@ -324,10 +327,9 @@ export default class MobileStatsPlugin extends Plugin {
             align-items: center;
             position: relative;
             background-color: transparent;
-            pointer-events: none; /* 事件穿透，彻底解决滚动冲突 */
+            pointer-events: none; 
         `);
 
-        // 画布容器
         const heatmapDiv = this.injectedContainer.createDiv({ 
             attr: { style: 'width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; overflow: hidden; position: relative;' } 
         });
@@ -335,9 +337,11 @@ export default class MobileStatsPlugin extends Plugin {
         navContainer.appendChild(this.injectedContainer);
         
         const heatmapWords = await analyzeDecorativeData(this.app);
+        
+        if (heatmapWords.length === 0) return;
 
-        // 动态半径稍微缩小，居中更美观
-        const baseRadius = Math.max((heatmapDiv.clientWidth / 2) * 0.7, 45); 
+        const maxWordCount = heatmapWords[0].value;
+        const baseRadius = Math.max((heatmapDiv.clientWidth / 2) * 0.75, 55); 
 
         this.sphereEngine = new WordSphereDecorativeEngine(heatmapDiv, baseRadius);
 
@@ -345,9 +349,9 @@ export default class MobileStatsPlugin extends Plugin {
             const wordEl = document.createElement('div');
             wordEl.innerText = word;
             
-            // 手机端字号调小，错落排布
-            const fontSize = Math.max(13, Math.min(24, 13 + (value/10)*11));
-            const fontWeight = value > 6 ? '700' : '400'; 
+            // 字体大小按照频率动态分配，制造视觉层次
+            const fontSize = Math.max(12, Math.min(22, 12 + (value/maxWordCount)*10));
+            const fontWeight = value > maxWordCount * 0.6 ? '700' : '400'; 
 
             wordEl.setAttr("style", `
                 font-family: "SimSun", "STSong", "Songti SC", serif;

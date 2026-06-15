@@ -1,9 +1,9 @@
 {
-  "id": "mobile-wordcloud-trends",
-  "name": "Mobile WordCloud Trends",
+  "id": "thought-synapse-mobile",
+  "name": "Thought Synapse (Mobile)",
   "version": "1.0.0",
-  "minAppVersion": "1.0.0",
-  "description": "Mobile Knowledge Topology",
+  "minAppVersion": "1.6.0",
+  "description": "An interactive, visually stunning 3D semantic network injected directly into your mobile file explorer.",
   "author": "Li Yaoming",
   "authorUrl": "https://github.com/liyaomingme",
   "isDesktopOnly": false

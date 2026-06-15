@@ -1,4 +1,46 @@
-/* 移动端拓扑网络插件专属样式 (目前完全使用内联 JS 渲染，留空防报错) */
-.stats-heatmap-dashboard-container-mobile {
-    box-sizing: border-box;
+/* --- 移动端文件栏寄生容器 --- */
+.ts-mobile-parasitic-container {
+    width: 100%;
+    height: 240px;
+    margin: 15px 0;
+    display: flex;
+    flex-shrink: 0;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    background-color: transparent;
+    pointer-events: none; /* 防止遮挡原生列表的滚动和点击 */
+}
+
+.ts-mobile-heatmap-div {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    position: relative;
+}
+
+.ts-mobile-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+/* --- 3D 悬浮词条基础样式 --- */
+.ts-mobile-word {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    will-change: transform, opacity, filter, color;
+    z-index: 10;
+    font-family: "SimSun", "STSong", "Songti SC", serif;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    user-select: none;
+    transform-origin: center center;
+    /* 具体动态形变、字体大小和透明度交由 JS 引擎实时渲染 */
 }

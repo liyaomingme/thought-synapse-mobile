@@ -1,4 +1,4 @@
-import { App, Plugin, TFile } from 'obsidian';
+import { App, Plugin, WorkspaceLeaf } from 'obsidian';
 
 const STOP_WORDS = new Set([
     '因此', '通过', '可以', '一个', '没有', '我们', '什么', '这个', '如果是', 
@@ -24,7 +24,6 @@ interface SphereNode {
     zRatio: number;
 }
 
-// --- 移动端专属：纯装饰级极简物理引擎 ---
 class WordSphereDecorativeEngine {
     container: HTMLElement;
     canvas: HTMLCanvasElement;
@@ -40,19 +39,14 @@ class WordSphereDecorativeEngine {
     animationFrameId: number = 0;
     isActive = true;
     
-    // 核心视觉重心偏移：不改DOM导致跳动，直接在渲染层将画面往下推！
     visualOffsetY = 15; 
 
     constructor(container: HTMLElement, radius: number) {
         this.container = container;
         this.radius = radius;
         
-        this.canvas = document.createElement('canvas');
-        this.canvas.style.position = 'absolute';
-        this.canvas.style.top = '0';
-        this.canvas.style.left = '0';
-        this.canvas.style.width = '100%';
-        this.canvas.style.height = '100%';
+        this.canvas = activeDocument.createElement('canvas');
+        this.canvas.addClass('ts-mobile-canvas');
         this.container.appendChild(this.canvas);
         
         const context = this.canvas.getContext('2d');
@@ -61,9 +55,10 @@ class WordSphereDecorativeEngine {
 
         this.handleResize();
 
-        const RO = (window as any).ResizeObserver;
-        if (RO) {
-            const observer = new RO(() => this.handleResize());
+        // 规范化类型断言
+        const ResizeObserverAPI = window.ResizeObserver;
+        if (ResizeObserverAPI) {
+            const observer = new ResizeObserverAPI(() => this.handleResize());
             observer.observe(this.container);
         }
     }
@@ -97,11 +92,7 @@ class WordSphereDecorativeEngine {
     }
 
     addTag(tagEl: HTMLElement) {
-        tagEl.style.position = 'absolute';
-        tagEl.style.left = '50%';
-        tagEl.style.top = '50%';
-        tagEl.style.willChange = 'transform, opacity, filter, color';
-        tagEl.style.zIndex = '10'; 
+        tagEl.addClass('ts-mobile-word');
         
         this.tags.push({
             el: tagEl,
@@ -137,7 +128,7 @@ class WordSphereDecorativeEngine {
         this.initPositions();
 
         const getComputedColor = (cssVar: string, fallback: string) => {
-            const val = getComputedStyle(document.body).getPropertyValue(cssVar).trim();
+            const val = getComputedStyle(activeDocument.body).getPropertyValue(cssVar).trim();
             return val || fallback;
         };
 
@@ -146,7 +137,6 @@ class WordSphereDecorativeEngine {
 
             this.ctx.clearRect(0, 0, this.width, this.height);
             const cx = this.width / 2;
-            // 画布原点加入视觉偏移
             const cy = (this.height / 2) + this.visualOffsetY;
 
             const colorNormal = getComputedColor('--text-normal', '#333333');
@@ -193,7 +183,6 @@ class WordSphereDecorativeEngine {
 
                 const depthScale = 0.6 + 0.5 * ((this.radius + tag.lz) / (2 * this.radius)); 
                 
-                // 字体坐标也加入完美的视觉偏移量
                 const baseTransform = `translate(-50%, -50%) translate3d(${tag.lx}px, ${tag.ly + this.visualOffsetY}px, 0px)`;
                 
                 tag.el.style.transform = `${baseTransform} scale(${depthScale})`;
@@ -274,7 +263,6 @@ export default class MobileStatsPlugin extends Plugin {
     injectedContainer: HTMLElement | null = null;
     cachedWords: {word: string, value: number}[] | null = null;
     
-    // 丝滑驻留的核心监听器
     mutationObserver: MutationObserver | null = null;
     currentObserverTarget: HTMLElement | null = null;
 
@@ -284,25 +272,22 @@ export default class MobileStatsPlugin extends Plugin {
             this.observeAndInject();
         });
 
-        // 监听视图变动，确保随时附着
         this.registerEvent(this.app.workspace.on('layout-change', () => {
             this.observeAndInject();
         }));
         
-        // 当打开新文件时，同样极速重置检查
         this.registerEvent(this.app.workspace.on('file-open', () => {
             this.observeAndInject();
         }));
     }
     
-    async onunload() { 
+    onunload() { 
         if (this.sphereEngine) this.sphereEngine.destroy();
         if (this.injectedContainer) this.injectedContainer.remove();
         if (this.mutationObserver) this.mutationObserver.disconnect();
         this.cachedWords = null;
     }
     
-    // 零延迟自愈构建方法
     observeAndInject() {
         try {
             const fileExplorerLeaves = this.app.workspace.getLeavesOfType('file-explorer');
@@ -312,17 +297,14 @@ export default class MobileStatsPlugin extends Plugin {
             const navContainer = fileExplorerContainer.querySelector('.nav-files-container') as HTMLElement;
             if (!navContainer) return;
 
-            // 1. 如果还没构建寄生体，直接构建
             if (!this.injectedContainer) {
                 this.buildContainer(navContainer);
             }
 
-            // 2. 如果寄生体不在树里，瞬间补齐
             if (!navContainer.contains(this.injectedContainer!)) {
                 navContainer.appendChild(this.injectedContainer!);
             }
 
-            // 3. 开启基因级锁死：只要 Obsidian 敢删，瞬间原样粘回去（0帧延迟）
             if (this.currentObserverTarget !== navContainer) {
                 if (this.mutationObserver) this.mutationObserver.disconnect();
                 
@@ -332,7 +314,6 @@ export default class MobileStatsPlugin extends Plugin {
                     }
                 });
                 
-                // 监听子节点的任何增删动作
                 this.mutationObserver.observe(navContainer, { childList: true });
                 this.currentObserverTarget = navContainer;
             }
@@ -342,30 +323,14 @@ export default class MobileStatsPlugin extends Plugin {
         }
     }
 
-    // 独立出构建 UI 的方法，只在插件最初加载时跑一次
     buildContainer(navContainer: HTMLElement) {
         if (this.sphereEngine) this.sphereEngine.destroy();
 
-        this.injectedContainer = document.createElement('div');
-        this.injectedContainer.className = 'mobile-parasitic-heatmap';
-        
-        // 恢复最纯净、无任何跳动隐患的 CSS
-        this.injectedContainer.setAttribute('style', `
-            width: 100%;
-            height: 240px; 
-            margin: 15px 0;
-            display: flex;
-            flex-shrink: 0; 
-            justify-content: center;
-            align-items: center;
-            position: relative;
-            background-color: transparent;
-            pointer-events: none;
-        `);
+        this.injectedContainer = activeDocument.createElement('div');
+        this.injectedContainer.addClass('ts-mobile-parasitic-container');
 
-        const heatmapDiv = this.injectedContainer.createDiv({ 
-            attr: { style: 'width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; overflow: hidden; position: relative;' } 
-        });
+        const heatmapDiv = this.injectedContainer.createDiv();
+        heatmapDiv.addClass('ts-mobile-heatmap-div');
 
         navContainer.appendChild(this.injectedContainer);
         
@@ -378,21 +343,14 @@ export default class MobileStatsPlugin extends Plugin {
         this.sphereEngine = new WordSphereDecorativeEngine(heatmapDiv, baseRadius);
 
         heatmapWords.forEach(({word, value}) => {
-            const wordEl = document.createElement('div');
+            const wordEl = activeDocument.createElement('div');
             wordEl.innerText = word;
             
             const fontSize = Math.max(11, Math.min(21, 11 + (value/maxWordCount)*10));
             const fontWeight = value > maxWordCount * 0.5 ? '700' : '400'; 
 
-            wordEl.setAttr("style", `
-                font-family: "SimSun", "STSong", "Songti SC", serif;
-                font-size: ${fontSize}px;
-                font-weight: ${fontWeight};
-                letter-spacing: 0.5px;
-                white-space: nowrap;
-                user-select: none;
-                transform-origin: center center;
-            `);
+            wordEl.style.fontSize = `${fontSize}px`;
+            wordEl.style.fontWeight = fontWeight;
             
             this.sphereEngine!.addTag(wordEl);
         });

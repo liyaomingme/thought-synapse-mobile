@@ -23,13 +23,6 @@
 
 "Thought Synapse" is more than just a sidebar word cloud; it's a "physics engine" for your personal knowledge base. Through real 3D nebula interactions optimized for touch screens, it connects your scattered notes, high-frequency vocabulary, and thought fragments, making your digital garden breathe.
 
-### 📸 Gallery
-
-<div align="center">
-  <img src="https://github.com/user-attachments/assets/YOUR_IMAGE_1_HERE" width="30%" alt="Preview 1">
-  <img src="https://github.com/user-attachments/assets/YOUR_IMAGE_2_HERE" width="30%" alt="Preview 2">
-  <img src="https://github.com/user-attachments/assets/YOUR_IMAGE_3_HERE" width="30%" alt="Preview 3">
-</div>
 
 ### 💡 Core Features
 

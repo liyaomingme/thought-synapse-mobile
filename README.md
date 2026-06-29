@@ -1,7 +1,7 @@
 <div align="center">
 
 # Thought Synapse (Mobile) 
-**(思维突触 - 移动版)**
+**(浮光识影 - 移动版)**
 
 *An exclusive, mobile-first ambient decorative plugin for Obsidian.*<br>
 *专为 Obsidian 移动端定制的伴随式艺术组件。*
@@ -94,3 +94,4 @@ An exclusive, mobile-first ambient decorative plugin designed specifically for *
 <div align="right">
   <a href="#thought-synapse-mobile">⇧ 回到顶部</a>
 </div>
+<img width="864" height="1821" alt="浮光识影手机" src="https://github.com/user-attachments/assets/f68377a9-2832-46d8-ac5f-8e2c8d55e7cd" />

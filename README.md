@@ -9,8 +9,7 @@
 
 <br>
 
-<img width="1080" height="2340" alt="55555" src="https://github.com/user-attachments/assets/86b88c16-32b5-440a-9def-8c5279bf6d76" />
-
+<img src="https://github.com/user-attachments/assets/86b88c16-32b5-440a-9def-8c5279bf6d76" width="300" alt="浮光掠影 移动端主界面">
 
 </div>
 

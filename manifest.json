@@ -1,7 +1,7 @@
 {
   "id": "thought-synapse-mobile",
   "name": "Thought Synapse (Mobile)",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "minAppVersion": "1.6.0",
   "description": "An interactive, visually stunning 3D semantic network injected directly into your mobile file explorer.",
   "author": "Li Yaoming",

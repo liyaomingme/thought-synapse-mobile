@@ -1,5 +1,6 @@
-import { App, Plugin, WorkspaceLeaf } from 'obsidian';
+import { App, Plugin, WorkspaceLeaf, PluginSettingTab, Setting } from 'obsidian';
 
+// 底层默认的硬核屏蔽词库
 const STOP_WORDS = new Set([
     '因此', '通过', '可以', '一个', '没有', '我们', '什么', '这个', '如果是', 
     '怎么', '如果', '可以说', '这样', '很多', '非常', '进行', '然后', '可能', 
@@ -23,6 +24,15 @@ interface SphereNode {
     lx: number; ly: number; lz: number; 
     zRatio: number;
 }
+
+// ✨ 新增：设置数据接口
+interface MobilePluginSettings {
+    customStopWords: string;
+}
+
+const DEFAULT_SETTINGS: MobilePluginSettings = {
+    customStopWords: ""
+};
 
 class WordSphereDecorativeEngine {
     container: HTMLElement;
@@ -55,7 +65,6 @@ class WordSphereDecorativeEngine {
 
         this.handleResize();
 
-        // 规范化类型断言
         const ResizeObserverAPI = window.ResizeObserver;
         if (ResizeObserverAPI) {
             const observer = new ResizeObserverAPI(() => this.handleResize());
@@ -228,7 +237,8 @@ class WordSphereDecorativeEngine {
     }
 }
 
-async function analyzeDecorativeData(app: App) {
+// ✨ 核心修改：分析数据时，将用户设置的自定义屏蔽词与底层屏蔽词合并
+async function analyzeDecorativeData(app: App, settings: MobilePluginSettings) {
     try {
         const files = app.vault.getMarkdownFiles();
         if (files.length === 0) return FALLBACK_WORDS;
@@ -236,12 +246,17 @@ async function analyzeDecorativeData(app: App) {
         const largestFiles = files.sort((a, b) => b.stat.size - a.stat.size).slice(0, 20);
         const wordData = new Map<string, number>();
 
+        // 解析用户输入的自定义屏蔽词（支持空格或逗号分隔）
+        const customWordsArray = settings.customStopWords.split(/[,，\s]+/).filter(w => w.trim().length > 0);
+        const customStopWordsSet = new Set(customWordsArray);
+
         for (const file of largestFiles) {
             const content = await app.vault.cachedRead(file);
             const matches = content.match(/[\u4e00-\u9fa5]{2,5}/g) || [];
             
             for (const w of matches) {
-                if (STOP_WORDS.has(w)) continue;
+                // 如果命中默认词库 或 命中用户自定义词库，则跳过
+                if (STOP_WORDS.has(w) || customStopWordsSet.has(w)) continue;
                 wordData.set(w, (wordData.get(w) || 0) + 1);
             }
         }
@@ -259,6 +274,7 @@ async function analyzeDecorativeData(app: App) {
 }
 
 export default class MobileStatsPlugin extends Plugin {
+    settings: MobilePluginSettings; // ✨ 新增设置变量
     sphereEngine: WordSphereDecorativeEngine | null = null;
     injectedContainer: HTMLElement | null = null;
     cachedWords: {word: string, value: number}[] | null = null;
@@ -267,8 +283,13 @@ export default class MobileStatsPlugin extends Plugin {
     currentObserverTarget: HTMLElement | null = null;
 
     async onload() {
+        await this.loadSettings();
+        
+        // 注册设置面板
+        this.addSettingTab(new MobileStatsSettingTab(this.app, this));
+
         this.app.workspace.onLayoutReady(async () => {
-            this.cachedWords = await analyzeDecorativeData(this.app);
+            this.cachedWords = await analyzeDecorativeData(this.app, this.settings);
             this.observeAndInject();
         });
 
@@ -279,6 +300,23 @@ export default class MobileStatsPlugin extends Plugin {
         this.registerEvent(this.app.workspace.on('file-open', () => {
             this.observeAndInject();
         }));
+    }
+
+    // ✨ 加载与保存设置
+    async loadSettings() {
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    }
+
+    async saveSettings() {
+        await this.saveData(this.settings);
+        
+        // 当用户修改屏蔽词并保存时，立即重新分析数据并刷新词云
+        this.cachedWords = await analyzeDecorativeData(this.app, this.settings);
+        if (this.injectedContainer) {
+            this.injectedContainer.remove();
+            this.injectedContainer = null;
+        }
+        this.observeAndInject();
     }
     
     onunload() { 
@@ -356,5 +394,37 @@ export default class MobileStatsPlugin extends Plugin {
         });
 
         this.sphereEngine.startAnimation();
+    }
+}
+
+// ✨ 新增：移动端插件设置面板
+class MobileStatsSettingTab extends PluginSettingTab {
+    plugin: MobileStatsPlugin;
+
+    constructor(app: App, plugin: MobileStatsPlugin) {
+        super(app, plugin);
+        this.plugin = plugin;
+    }
+
+    display(): void {
+        const { containerEl } = this;
+        containerEl.empty();
+
+        new Setting(containerEl).setName('Thought Synapse (移动版) 设置').setHeading();
+
+        new Setting(containerEl)
+            .setName('自定义屏蔽词汇')
+            .setDesc('在此输入你不想在词云中看到的词（如：大家, 就是, 你的），支持使用空格或逗号分隔。设置后词云将即时刷新。')
+            .addTextArea(text => {
+                text
+                    .setPlaceholder('输入屏蔽词汇...')
+                    .setValue(this.plugin.settings.customStopWords)
+                    .onChange(async (value) => {
+                        this.plugin.settings.customStopWords = value;
+                        await this.plugin.saveSettings();
+                    });
+                text.inputEl.rows = 4;
+                text.inputEl.cols = 25;
+            });
     }
 }

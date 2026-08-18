@@ -69,29 +69,6 @@ Download `main.js`, `manifest.json`, and `styles.css` from the [Releases](https:
 **方法二：手动离线安装**
 前往 [Releases](https://github.com/liyaomingme/thought-synapse-mobile/releases) 下载最新版文件，放入 `.obsidian/plugins/thought-synapse-mobile` 文件夹后重启即可。
 
----
-
-<br>
-
-<div align="center">
-
-### ☕ 赞赏与支持 (Sponsor)
-
-*“把冷冰冰的代码，织成你的知识宇宙。”*
-
-作为一名独立开发者，我试图抹平“技术”与“审美”的边界。如果“浮光识影”为你的日常记录带来了视觉上的愉悦，或者提升了你的知识管理效率，欢迎请开发者喝杯咖啡！
-
-你的认可是我持续打磨产品细节、对抗掉头发的最大动力。❤️
-
-<div align="center">
-
-<img src="https://github.com/user-attachments/assets/bf88c060-67b0-4fbd-8a7d-c0e1d850ee3d" width="260" alt="二合一赞赏码">
-
-*( 支持使用 微信 / 支付宝 扫码 )*
-
-**✨ 感谢你的支持与陪伴！✨**
-
-</div>
 
 ---
 

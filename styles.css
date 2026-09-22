@@ -89,8 +89,44 @@
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    margin-top: 10px;
+    margin-top: 8px;
+    align-content: flex-start;
+    /* 限高滚动：词多时标签区内部滚动，不撑乱设置页 */
+    max-height: 168px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+    touch-action: pan-y;
+    padding: 2px;
 }
+.stopword-tags::-webkit-scrollbar { display: none; }
+.stopword-meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+    min-height: 18px;
+}
+.stopword-counter {
+    font-size: 12px;
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+}
+.stopword-msg {
+    font-size: 12px;
+    color: #8A1F1F;
+    font-weight: 600;
+    text-align: left;
+    opacity: 0;
+    transition: opacity 0.25s ease;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.theme-dark .stopword-msg { color: #D89A9A; }
+.stopword-msg.is-visible { opacity: 1; }
 .stopword-empty {
     font-size: 13px;
     color: var(--text-faint);
@@ -104,6 +140,9 @@
     border-radius: 999px;
     background: var(--background-secondary);
     border: 1px solid var(--background-modifier-border);
+}
+/* 只有新添加的词播放入场动画（解决连续输入时整排标签闪烁） */
+.stopword-chip.is-new {
     animation: chipIn 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 @keyframes chipIn {

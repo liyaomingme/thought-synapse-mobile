@@ -38,6 +38,9 @@ const DEFAULT_SETTINGS: MobilePluginSettings = {
     hotwordDays: 30
 };
 
+// 屏蔽词数量上限:防止词过多导致词云噪音与设置面板过长
+const MAX_STOP_WORDS = 50;
+
 class WordSphereDecorativeEngine {
     container: HTMLElement;
     canvas: HTMLCanvasElement;
@@ -292,6 +295,7 @@ export default class MobileStatsPlugin extends Plugin {
     
     mutationObserver: MutationObserver | null = null;
     currentObserverTarget: HTMLElement | null = null;
+    rebuildTimer: number | null = null;
 
     async onload() {
         await this.loadSettings();
@@ -331,7 +335,13 @@ export default class MobileStatsPlugin extends Plugin {
     async saveSettings() {
         await this.saveData(this.settings);
         
-        // 当用户修改屏蔽词并保存时，立即重新分析数据并刷新词云
+        // ✨ v1.0.5 防抖：连续修改设置（如逐个添加屏蔽词）时，停顿 1 秒后才重建词云，
+        // 避免每加一个词就闪烁重建一次，保证连续输入体验
+        if (this.rebuildTimer) window.clearTimeout(this.rebuildTimer);
+        this.rebuildTimer = window.setTimeout(() => { void this.refreshSphere(); }, 1000);
+    }
+
+    private async refreshSphere() {
         this.cachedWords = await analyzeDecorativeData(this.app, this.settings);
         if (this.injectedContainer) {
             this.injectedContainer.remove();
@@ -344,6 +354,7 @@ export default class MobileStatsPlugin extends Plugin {
         if (this.sphereEngine) this.sphereEngine.destroy();
         if (this.injectedContainer) this.injectedContainer.remove();
         if (this.mutationObserver) this.mutationObserver.disconnect();
+        if (this.rebuildTimer) window.clearTimeout(this.rebuildTimer);
         this.cachedWords = null;
     }
     
@@ -462,11 +473,11 @@ class MobileStatsSettingTab extends PluginSettingTab {
                     });
             });
 
-        // ✨ v1.0.4 标签式屏蔽词管理：输入 → 添加(或回车) → 标签；点 × 移除。无需空格/逗号分隔。
+        // ✨ v1.0.5 标签式屏蔽词管理：连续输入、去重提示、数量上限(50)、限高滚动
         new Setting(containerEl)
             .setName('自定义屏蔽词汇')
             .setHeading()
-            .setDesc('输入不想在词云中看到的词，点「添加」或按回车即可屏蔽；点标签上的 × 可取消屏蔽。修改后词云将即时刷新。');
+            .setDesc('输入词后点「添加」或按回车，可连续输入；点标签上的 × 可取消屏蔽。最多 50 个。');
 
         const manager = containerEl.createDiv('stopword-manager');
         const inputRow = manager.createDiv('stopword-input-row');
@@ -476,17 +487,32 @@ class MobileStatsSettingTab extends PluginSettingTab {
             attr: { placeholder: '输入要屏蔽的词…', 'aria-label': '输入要屏蔽的词' }
         });
         const addBtn = inputRow.createEl('button', { cls: 'stopword-add-btn', text: '添加' });
+
+        const metaRow = manager.createDiv('stopword-meta-row');
+        const msgEl = metaRow.createDiv({ cls: 'stopword-msg', text: '' });
+        const counterEl = metaRow.createDiv({ cls: 'stopword-counter' });
         const tagsWrap = manager.createDiv('stopword-tags');
 
-        const renderTags = () => {
-            tagsWrap.empty();
+        let msgTimer: number | null = null;
+        const flashMsg = (text: string) => {
+            msgEl.setText(text);
+            msgEl.addClass('is-visible');
+            if (msgTimer) window.clearTimeout(msgTimer);
+            msgTimer = window.setTimeout(() => msgEl.removeClass('is-visible'), 2000);
+        };
+
+        // animateWord: 只有刚添加的词播放入场动画，其余标签保持静止（解决"每加一个闪一下"）
+        const renderTags = (animateWord?: string) => {
             const words = this.plugin.settings.customStopWords;
+            counterEl.setText(`${words.length} / ${MAX_STOP_WORDS}`);
+            tagsWrap.empty();
             if (words.length === 0) {
                 tagsWrap.createDiv({ cls: 'stopword-empty', text: '暂无屏蔽词' });
                 return;
             }
             words.forEach(word => {
                 const chip = tagsWrap.createDiv('stopword-chip');
+                if (animateWord && word === animateWord) chip.addClass('is-new');
                 chip.createSpan({ text: word, cls: 'stopword-chip-text' });
                 const removeBtn = chip.createSpan({ text: '×', cls: 'stopword-chip-remove', attr: { 'aria-label': `取消屏蔽 ${word}` } });
                 removeBtn.onclick = () => {
@@ -503,16 +529,31 @@ class MobileStatsSettingTab extends PluginSettingTab {
             void (async () => {
                 const word = wordInput.value.trim();
                 if (!word) return;
-                if (!this.plugin.settings.customStopWords.includes(word)) {
-                    this.plugin.settings.customStopWords.push(word);
-                    await this.plugin.saveSettings();
+                // 过滤纯符号（如单独的逗号、句号）
+                if (!/[\u4e00-\u9fa5A-Za-z0-9]/.test(word)) {
+                    flashMsg('请输入包含文字或数字的词');
+                    return;
                 }
+                const words = this.plugin.settings.customStopWords;
+                if (words.includes(word)) {
+                    flashMsg(`「${word}」已在屏蔽列表中`);
+                    wordInput.value = '';
+                    return;
+                }
+                if (words.length >= MAX_STOP_WORDS) {
+                    flashMsg(`最多可屏蔽 ${MAX_STOP_WORDS} 个词，请先移除部分`);
+                    return;
+                }
+                words.push(word);
+                await this.plugin.saveSettings();
                 wordInput.value = '';
-                renderTags();
+                renderTags(word);
                 wordInput.focus();
             })();
         };
 
+        // 点击按钮时不让输入框失焦（键盘保持弹出，实现连续输入）
+        addBtn.addEventListener('pointerdown', (e) => e.preventDefault());
         addBtn.onclick = () => addWord();
         wordInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') { e.preventDefault(); addWord(); }

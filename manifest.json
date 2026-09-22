@@ -1,7 +1,7 @@
 {
   "id": "thought-synapse-mobile",
-  "name": "浮光掠影 Floating Glimpse (Mobile)",
-  "version": "1.0.7",
+  "name": "Floating Glimpse (Mobile)",
+  "version": "1.0.8",
   "minAppVersion": "1.6.0",
   "description": "An interactive, visually stunning 3D semantic network injected directly into your mobile file explorer.",
   "author": "Li Yaoming",

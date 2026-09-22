@@ -1,6 +1,6 @@
 <div align="center">
 
-# ✨ 浮光掠影 Floating Glimpse (Mobile)
+# ✨ Floating Glimpse (Mobile) | 浮光掠影
 
 *An exclusive, mobile-first ambient decorative plugin for your Obsidian vault.*
 专为 Obsidian 移动端定制的伴随式 3D 艺术组件。

@@ -28,10 +28,14 @@ interface SphereNode {
 // ✨ 新增：设置数据接口
 interface MobilePluginSettings {
     customStopWords: string;
+    hotwordFolder: string;
+    hotwordDays: number;
 }
 
 const DEFAULT_SETTINGS: MobilePluginSettings = {
-    customStopWords: ""
+    customStopWords: "",
+    hotwordFolder: "",
+    hotwordDays: 30
 };
 
 class WordSphereDecorativeEngine {
@@ -238,19 +242,27 @@ class WordSphereDecorativeEngine {
 }
 
 // ✨ 核心修改：分析数据时，将用户设置的自定义屏蔽词与底层屏蔽词合并
+// ✨ 本次升级：支持指定文件夹检索近期热词（只统计该文件夹内、最近 N 天修改过的笔记）
 async function analyzeDecorativeData(app: App, settings: MobilePluginSettings) {
     try {
-        const files = app.vault.getMarkdownFiles();
+        const folderPrefix = (settings.hotwordFolder || "").trim().replace(/\/+$/, "");
+        const days = Math.max(1, settings.hotwordDays || 30);
+        const since = Date.now() - days * 24 * 60 * 60 * 1000;
+
+        const files = app.vault.getMarkdownFiles()
+            .filter(f => !folderPrefix || f.path === folderPrefix || f.path.startsWith(folderPrefix + "/"))
+            .filter(f => f.stat.mtime >= since)
+            .sort((a, b) => b.stat.mtime - a.stat.mtime)
+            .slice(0, 80); // 移动端性能保护：最多精读最近 80 篇
         if (files.length === 0) return FALLBACK_WORDS;
 
-        const largestFiles = files.sort((a, b) => b.stat.size - a.stat.size).slice(0, 20);
         const wordData = new Map<string, number>();
 
         // 解析用户输入的自定义屏蔽词（支持空格或逗号分隔）
         const customWordsArray = settings.customStopWords.split(/[,，\s]+/).filter(w => w.trim().length > 0);
         const customStopWordsSet = new Set(customWordsArray);
 
-        for (const file of largestFiles) {
+        for (const file of files) {
             const content = await app.vault.cachedRead(file);
             const matches = content.match(/[\u4e00-\u9fa5]{2,5}/g) || [];
             
@@ -411,6 +423,35 @@ class MobileStatsSettingTab extends PluginSettingTab {
         containerEl.empty();
 
         new Setting(containerEl).setName('Thought Synapse (移动版) 设置').setHeading();
+
+        new Setting(containerEl)
+            .setName('检索文件夹 (留空 = 全库)')
+            .setDesc('只统计该文件夹(含子文件夹)内最近修改的笔记，如：日记 或 灵感捕捉。留空则扫描整个仓库。')
+            .addText(text => {
+                text
+                    .setPlaceholder('例如: 灵感捕捉')
+                    .setValue(this.plugin.settings.hotwordFolder)
+                    .onChange(async (value) => {
+                        this.plugin.settings.hotwordFolder = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
+
+        new Setting(containerEl)
+            .setName('近期范围 (天)')
+            .setDesc('只统计最近 N 天内修改过的笔记的用词，默认 30 天。修改后词云将即时刷新。')
+            .addText(text => {
+                text
+                    .setPlaceholder('30')
+                    .setValue(String(this.plugin.settings.hotwordDays))
+                    .onChange(async (value) => {
+                        const n = parseInt(value);
+                        if (!isNaN(n) && n > 0) {
+                            this.plugin.settings.hotwordDays = n;
+                            await this.plugin.saveSettings();
+                        }
+                    });
+            });
 
         new Setting(containerEl)
             .setName('自定义屏蔽词汇')

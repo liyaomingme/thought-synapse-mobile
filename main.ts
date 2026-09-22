@@ -27,13 +27,13 @@ interface SphereNode {
 
 // ✨ 新增：设置数据接口
 interface MobilePluginSettings {
-    customStopWords: string;
+    customStopWords: string[];
     hotwordFolder: string;
     hotwordDays: number;
 }
 
 const DEFAULT_SETTINGS: MobilePluginSettings = {
-    customStopWords: "",
+    customStopWords: [],
     hotwordFolder: "",
     hotwordDays: 30
 };
@@ -258,9 +258,8 @@ async function analyzeDecorativeData(app: App, settings: MobilePluginSettings) {
 
         const wordData = new Map<string, number>();
 
-        // 解析用户输入的自定义屏蔽词（支持空格或逗号分隔）
-        const customWordsArray = settings.customStopWords.split(/[,，\s]+/).filter(w => w.trim().length > 0);
-        const customStopWordsSet = new Set(customWordsArray);
+        // 用户自定义屏蔽词（v1.0.4 起为词数组,由标签式设置页维护）
+        const customStopWordsSet = new Set(settings.customStopWords);
 
         for (const file of files) {
             const content = await app.vault.cachedRead(file);
@@ -316,7 +315,17 @@ export default class MobileStatsPlugin extends Plugin {
 
     // ✨ 加载与保存设置
     async loadSettings() {
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+        const data = await this.loadData() as Partial<MobilePluginSettings> | null;
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
+
+        // 兼容迁移：v1.0.3 及之前 customStopWords 为逗号/空格分隔的字符串
+        const legacy = data?.customStopWords as unknown;
+        if (typeof legacy === 'string') {
+            this.settings.customStopWords = legacy.split(/[,，\s]+/).filter(w => w.trim().length > 0);
+        }
+        if (!Array.isArray(this.settings.customStopWords)) {
+            this.settings.customStopWords = [];
+        }
     }
 
     async saveSettings() {
@@ -453,19 +462,62 @@ class MobileStatsSettingTab extends PluginSettingTab {
                     });
             });
 
+        // ✨ v1.0.4 标签式屏蔽词管理：输入 → 添加(或回车) → 标签；点 × 移除。无需空格/逗号分隔。
         new Setting(containerEl)
             .setName('自定义屏蔽词汇')
-            .setDesc('在此输入你不想在词云中看到的词（如：大家, 就是, 你的），支持使用空格或逗号分隔。设置后词云将即时刷新。')
-            .addTextArea(text => {
-                text
-                    .setPlaceholder('输入屏蔽词汇...')
-                    .setValue(this.plugin.settings.customStopWords)
-                    .onChange(async (value) => {
-                        this.plugin.settings.customStopWords = value;
+            .setHeading()
+            .setDesc('输入不想在词云中看到的词，点「添加」或按回车即可屏蔽；点标签上的 × 可取消屏蔽。修改后词云将即时刷新。');
+
+        const manager = containerEl.createDiv('stopword-manager');
+        const inputRow = manager.createDiv('stopword-input-row');
+        const wordInput = inputRow.createEl('input', {
+            cls: 'stopword-input',
+            type: 'text',
+            attr: { placeholder: '输入要屏蔽的词…', 'aria-label': '输入要屏蔽的词' }
+        });
+        const addBtn = inputRow.createEl('button', { cls: 'stopword-add-btn', text: '添加' });
+        const tagsWrap = manager.createDiv('stopword-tags');
+
+        const renderTags = () => {
+            tagsWrap.empty();
+            const words = this.plugin.settings.customStopWords;
+            if (words.length === 0) {
+                tagsWrap.createDiv({ cls: 'stopword-empty', text: '暂无屏蔽词' });
+                return;
+            }
+            words.forEach(word => {
+                const chip = tagsWrap.createDiv('stopword-chip');
+                chip.createSpan({ text: word, cls: 'stopword-chip-text' });
+                const removeBtn = chip.createSpan({ text: '×', cls: 'stopword-chip-remove', attr: { 'aria-label': `取消屏蔽 ${word}` } });
+                removeBtn.onclick = () => {
+                    void (async () => {
+                        this.plugin.settings.customStopWords = words.filter(w => w !== word);
                         await this.plugin.saveSettings();
-                    });
-                text.inputEl.rows = 4;
-                text.inputEl.cols = 25;
+                        renderTags();
+                    })();
+                };
             });
+        };
+
+        const addWord = () => {
+            void (async () => {
+                const word = wordInput.value.trim();
+                if (!word) return;
+                if (!this.plugin.settings.customStopWords.includes(word)) {
+                    this.plugin.settings.customStopWords.push(word);
+                    await this.plugin.saveSettings();
+                }
+                wordInput.value = '';
+                renderTags();
+                wordInput.focus();
+            })();
+        };
+
+        addBtn.onclick = () => addWord();
+        wordInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); addWord(); }
+        });
+
+        renderTags();
     }
 }

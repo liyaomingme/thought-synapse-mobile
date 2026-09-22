@@ -1,6 +1,6 @@
 {
   "name": "thought-synapse-mobile",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Mobile Knowledge Topology for Obsidian",
   "main": "main.js",
   "scripts": {

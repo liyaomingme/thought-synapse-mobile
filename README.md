@@ -29,6 +29,9 @@
 - **📱 Mobile-First Touch Interaction**: Features a re-engineered physics engine with custom damping algorithms designed specifically for swipes and gestures. Spin your knowledge universe with zero lag.
 - **✨ Ambient Aesthetics**: Deeply integrated with Obsidian's mobile UI, transforming dry high-frequency words into a breathing, dynamic aesthetic background.
 - **🔗 Contextual Co-occurrence**: Tap any floating node to instantly reveal its contextual connections and jump directly to the source notes.
+- **🔥 Scoped Recent Hot Words**: Analyze only the notes that matter — restrict the sphere to specific folders (multiple folders supported, comma separated) and a recent time window (default: last 30 days). The sphere refreshes automatically as you write, and a subtle ↻ button forces an instant re-analysis.
+- **🏷️ Tag-Style Stop-Word Manager**: Block unwanted words with a visual tag manager — type, tap Add (or press Enter), done. Duplicates are rejected with an inline hint, up to 50 tags, scrollable list.
+- **🌍 Bilingual UI**: Settings follow your Obsidian interface language (English / 简体中文) automatically.
 
 ### ⚙️ Installation
 
@@ -57,6 +60,9 @@ Download `main.js`, `manifest.json`, and `styles.css` from the [Releases](https:
 - **📱 移动端原生触控**：专为手指滑动重写的物理阻尼算法，随心拨转你的 3D 知识星云，带来极致顺滑的把玩体验。
 - **✨ 伴随式极光美学**：深度适配 Obsidian 移动端色彩系统，让原本枯燥的数据统计变成极具美感的艺术组件。
 - **🔗 悬停共现 (Co-occurrence)**：点击任意悬浮词汇，立刻弹出精美的上下文语境卡片，一键穿梭直达原笔记。
+- **🔥 指定文件夹 · 近期热词**：只统计你关心的范围——支持指定多个文件夹（逗号分隔）与近期天数（默认 30 天）；写作时词球自动静默刷新，右上角 ↻ 可随时强制重算。
+- **🏷️ 标签式屏蔽词管理**：输入词 → 点「添加」或回车 → 变成标签；点 × 取消屏蔽。重复词有提示，上限 50 个，列表限高滚动。
+- **🌍 界面双语**：设置页自动跟随 Obsidian 界面语言（简体中文 / English）。
 
 ### ⚙️ 安装与配置 (Installation)
 
@@ -72,8 +78,13 @@ Download `main.js`, `manifest.json`, and `styles.css` from the [Releases](https:
 
 ---
 
-### 💬 交流与反馈
+### 👤 关于作者 (About the Author)
+
+**李耀明 / Li Yaoming** — Obsidian 移动端美学插件系列作者
+- **GitHub**: [github.com/liyaomingme](https://github.com/liyaomingme)(同系列:Thought Synapse Desktop、Mobile Dashboard、Desktop Dashboard)
+- **小红书**: 搜索作者 `李耀明`,获取最新插件动态、教程与社群入口
+
+### 💬 交流与反馈 (Feedback)
 
 欢迎加入我们的数字美学社群！遇到任何 Bug、排版错位，或是对新功能有绝妙的灵感，请带上你的 **设备型号 + Obsidian 版本号** 进行反馈。
-- **GitHub Issues**: [点击提交反馈](https://github.com/liyaomingme/Obsidian-Thought-Synapse-Desktop/issues)
-- **小红书同频交流**: 搜索作者 `李耀明` 获取最新插件动态与社群入口。
+- **GitHub Issues**: [点击提交反馈 / Submit an issue](https://github.com/liyaomingme/Obsidian-Thought-Synapse-Desktop/issues)

@@ -41,6 +41,54 @@ const DEFAULT_SETTINGS: MobilePluginSettings = {
 // 屏蔽词数量上限:防止词过多导致词云噪音与设置面板过长
 const MAX_STOP_WORDS = 50;
 
+// ✨ v1.0.6 界面双语：跟随 Obsidian 界面语言(zh=中文,其他=英文)
+function getLang(): 'zh' | 'en' {
+    const lang = (window.localStorage.getItem('language') || 'en').toLowerCase();
+    return lang.startsWith('zh') ? 'zh' : 'en';
+}
+
+function createI18n() {
+    const zh = {
+        settingsTitle: 'Thought Synapse (移动版) 设置',
+        folder: '检索文件夹 (留空 = 全库)',
+        folderDesc: '只统计这些文件夹(含子文件夹)内最近修改的笔记，多个文件夹用逗号分隔，如：日记, 灵感捕捉。留空则扫描整个仓库。',
+        folderPlaceholder: '例如: 日记, 灵感捕捉',
+        days: '近期范围 (天)',
+        daysDesc: '只统计最近 N 天内修改过的笔记的用词，默认 30 天。修改笔记或设置后词云会自动刷新。',
+        stopwords: '自定义屏蔽词汇',
+        stopDesc: '输入词后点「添加」或按回车，可连续输入；点标签上的 × 可取消屏蔽。最多 50 个。',
+        inputPlaceholder: '输入要屏蔽的词…',
+        add: '添加',
+        emptyTags: '暂无屏蔽词',
+        msgInvalid: '请输入包含文字或数字的词',
+        msgLimit: `最多可屏蔽 ${MAX_STOP_WORDS} 个词，请先移除部分`,
+        refreshAria: '重新统计热词',
+        removeAria: (w: string) => `取消屏蔽 ${w}`,
+        msgDup: (w: string) => `「${w}」已在屏蔽列表中`
+    };
+    const en = {
+        settingsTitle: 'Thought Synapse (Mobile) Settings',
+        folder: 'Search folders (empty = whole vault)',
+        folderDesc: 'Only analyze recent notes inside these folders (subfolders included). Separate multiple folders with commas, e.g. Journal, Ideas. Leave empty to scan the whole vault.',
+        folderPlaceholder: 'e.g. Journal, Ideas',
+        days: 'Recent window (days)',
+        daysDesc: 'Only analyze words from notes modified within the last N days. Default: 30. The word sphere refreshes automatically after edits.',
+        stopwords: 'Custom stop words',
+        stopDesc: 'Type a word and tap Add (or press Enter) — input continuously; tap × on a tag to unblock. Up to 50 words.',
+        inputPlaceholder: 'Type a word to block…',
+        add: 'Add',
+        emptyTags: 'No stop words yet',
+        msgInvalid: 'Please enter a word containing letters, CJK characters or digits',
+        msgLimit: `Limit of ${MAX_STOP_WORDS} words reached — remove some first`,
+        refreshAria: 'Re-analyze hot words',
+        removeAria: (w: string) => `Unblock ${w}`,
+        msgDup: (w: string) => `"${w}" is already blocked`
+    };
+    const lang = getLang();
+    return lang === 'zh' ? zh : en;
+}
+type I18n = ReturnType<typeof createI18n>;
+
 class WordSphereDecorativeEngine {
     container: HTMLElement;
     canvas: HTMLCanvasElement;
@@ -245,15 +293,19 @@ class WordSphereDecorativeEngine {
 }
 
 // ✨ 核心修改：分析数据时，将用户设置的自定义屏蔽词与底层屏蔽词合并
-// ✨ 本次升级：支持指定文件夹检索近期热词（只统计该文件夹内、最近 N 天修改过的笔记）
+// ✨ 本次升级：支持指定文件夹检索近期热词（只统计这些文件夹内、最近 N 天修改过的笔记）
+// ✨ v1.0.6 多文件夹：检索文件夹支持逗号分隔多个，如 "日记, 灵感捕捉"
 async function analyzeDecorativeData(app: App, settings: MobilePluginSettings) {
     try {
-        const folderPrefix = (settings.hotwordFolder || "").trim().replace(/\/+$/, "");
+        const folderPrefixes = (settings.hotwordFolder || "")
+            .split(/[,，]/)
+            .map(p => p.trim().replace(/\/+$/, ""))
+            .filter(p => p.length > 0);
         const days = Math.max(1, settings.hotwordDays || 30);
         const since = Date.now() - days * 24 * 60 * 60 * 1000;
 
         const files = app.vault.getMarkdownFiles()
-            .filter(f => !folderPrefix || f.path === folderPrefix || f.path.startsWith(folderPrefix + "/"))
+            .filter(f => folderPrefixes.length === 0 || folderPrefixes.some(p => f.path === p || f.path.startsWith(p + "/")))
             .filter(f => f.stat.mtime >= since)
             .sort((a, b) => b.stat.mtime - a.stat.mtime)
             .slice(0, 80); // 移动端性能保护：最多精读最近 80 篇
@@ -308,6 +360,18 @@ export default class MobileStatsPlugin extends Plugin {
             this.observeAndInject();
         });
 
+        // ✨ v1.0.6 自动刷新：笔记有增删改后，静置 90 秒(防抖)自动重算词云——
+        // 用户正常书写时完全不打扰，停下笔一小会儿词球就悄悄跟上最新内容
+        let vaultChangeTimer: number | null = null;
+        const scheduleVaultRefresh = () => {
+            if (vaultChangeTimer) window.clearTimeout(vaultChangeTimer);
+            vaultChangeTimer = window.setTimeout(() => { void this.refreshSphere(); }, 90_000);
+        };
+        this.registerEvent(this.app.vault.on('modify', scheduleVaultRefresh));
+        this.registerEvent(this.app.vault.on('create', scheduleVaultRefresh));
+        this.registerEvent(this.app.vault.on('delete', scheduleVaultRefresh));
+        this.registerEvent(this.app.vault.on('rename', scheduleVaultRefresh));
+
         this.registerEvent(this.app.workspace.on('layout-change', () => {
             this.observeAndInject();
         }));
@@ -357,6 +421,12 @@ export default class MobileStatsPlugin extends Plugin {
         if (this.rebuildTimer) window.clearTimeout(this.rebuildTimer);
         this.cachedWords = null;
     }
+
+    // ✨ v1.0.6 手动刷新：立即重算并重建词球(设置变化仍走 1 秒防抖,此处为即时通道)
+    manualRefresh() {
+        if (this.rebuildTimer) { window.clearTimeout(this.rebuildTimer); this.rebuildTimer = null; }
+        void this.refreshSphere();
+    }
     
     observeAndInject() {
         try {
@@ -398,6 +468,11 @@ export default class MobileStatsPlugin extends Plugin {
 
         this.injectedContainer = activeDocument.createElement('div');
         this.injectedContainer.addClass('ts-mobile-parasitic-container');
+
+        // ✨ v1.0.6 手动刷新按钮(右上角,不遮挡文件列表)
+        const i18n = createI18n();
+        const refreshBtn = this.injectedContainer.createSpan({ text: '↻', cls: 'ts-mobile-refresh-btn', attr: { 'aria-label': i18n.refreshAria } });
+        refreshBtn.onclick = (e) => { e.stopPropagation(); this.manualRefresh(); };
 
         const heatmapDiv = this.injectedContainer.createDiv();
         heatmapDiv.addClass('ts-mobile-heatmap-div');
@@ -442,14 +517,17 @@ class MobileStatsSettingTab extends PluginSettingTab {
         const { containerEl } = this;
         containerEl.empty();
 
-        new Setting(containerEl).setName('Thought Synapse (移动版) 设置').setHeading();
+        // ✨ v1.0.6 界面双语：跟随 Obsidian 界面语言自动切换
+        const t = createI18n();
+
+        new Setting(containerEl).setName(t.settingsTitle).setHeading();
 
         new Setting(containerEl)
-            .setName('检索文件夹 (留空 = 全库)')
-            .setDesc('只统计该文件夹(含子文件夹)内最近修改的笔记，如：日记 或 灵感捕捉。留空则扫描整个仓库。')
+            .setName(t.folder)
+            .setDesc(t.folderDesc)
             .addText(text => {
                 text
-                    .setPlaceholder('例如: 灵感捕捉')
+                    .setPlaceholder(t.folderPlaceholder)
                     .setValue(this.plugin.settings.hotwordFolder)
                     .onChange(async (value) => {
                         this.plugin.settings.hotwordFolder = value;
@@ -458,8 +536,8 @@ class MobileStatsSettingTab extends PluginSettingTab {
             });
 
         new Setting(containerEl)
-            .setName('近期范围 (天)')
-            .setDesc('只统计最近 N 天内修改过的笔记的用词，默认 30 天。修改后词云将即时刷新。')
+            .setName(t.days)
+            .setDesc(t.daysDesc)
             .addText(text => {
                 text
                     .setPlaceholder('30')
@@ -475,18 +553,18 @@ class MobileStatsSettingTab extends PluginSettingTab {
 
         // ✨ v1.0.5 标签式屏蔽词管理：连续输入、去重提示、数量上限(50)、限高滚动
         new Setting(containerEl)
-            .setName('自定义屏蔽词汇')
+            .setName(t.stopwords)
             .setHeading()
-            .setDesc('输入词后点「添加」或按回车，可连续输入；点标签上的 × 可取消屏蔽。最多 50 个。');
+            .setDesc(t.stopDesc);
 
         const manager = containerEl.createDiv('stopword-manager');
         const inputRow = manager.createDiv('stopword-input-row');
         const wordInput = inputRow.createEl('input', {
             cls: 'stopword-input',
             type: 'text',
-            attr: { placeholder: '输入要屏蔽的词…', 'aria-label': '输入要屏蔽的词' }
+            attr: { placeholder: t.inputPlaceholder, 'aria-label': t.inputPlaceholder }
         });
-        const addBtn = inputRow.createEl('button', { cls: 'stopword-add-btn', text: '添加' });
+        const addBtn = inputRow.createEl('button', { cls: 'stopword-add-btn', text: t.add });
 
         const metaRow = manager.createDiv('stopword-meta-row');
         const msgEl = metaRow.createDiv({ cls: 'stopword-msg', text: '' });
@@ -507,14 +585,14 @@ class MobileStatsSettingTab extends PluginSettingTab {
             counterEl.setText(`${words.length} / ${MAX_STOP_WORDS}`);
             tagsWrap.empty();
             if (words.length === 0) {
-                tagsWrap.createDiv({ cls: 'stopword-empty', text: '暂无屏蔽词' });
+                tagsWrap.createDiv({ cls: 'stopword-empty', text: t.emptyTags });
                 return;
             }
             words.forEach(word => {
                 const chip = tagsWrap.createDiv('stopword-chip');
                 if (animateWord && word === animateWord) chip.addClass('is-new');
                 chip.createSpan({ text: word, cls: 'stopword-chip-text' });
-                const removeBtn = chip.createSpan({ text: '×', cls: 'stopword-chip-remove', attr: { 'aria-label': `取消屏蔽 ${word}` } });
+                const removeBtn = chip.createSpan({ text: '×', cls: 'stopword-chip-remove', attr: { 'aria-label': t.removeAria(word) } });
                 removeBtn.onclick = () => {
                     void (async () => {
                         this.plugin.settings.customStopWords = words.filter(w => w !== word);
@@ -531,17 +609,17 @@ class MobileStatsSettingTab extends PluginSettingTab {
                 if (!word) return;
                 // 过滤纯符号（如单独的逗号、句号）
                 if (!/[\u4e00-\u9fa5A-Za-z0-9]/.test(word)) {
-                    flashMsg('请输入包含文字或数字的词');
+                    flashMsg(t.msgInvalid);
                     return;
                 }
                 const words = this.plugin.settings.customStopWords;
                 if (words.includes(word)) {
-                    flashMsg(`「${word}」已在屏蔽列表中`);
+                    flashMsg(t.msgDup(word));
                     wordInput.value = '';
                     return;
                 }
                 if (words.length >= MAX_STOP_WORDS) {
-                    flashMsg(`最多可屏蔽 ${MAX_STOP_WORDS} 个词，请先移除部分`);
+                    flashMsg(t.msgLimit);
                     return;
                 }
                 words.push(word);

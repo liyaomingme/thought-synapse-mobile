@@ -1,4 +1,4 @@
-import { App, Plugin, WorkspaceLeaf, PluginSettingTab, Setting } from 'obsidian';
+import { App, Plugin, WorkspaceLeaf, PluginSettingTab, Setting, moment } from 'obsidian';
 
 // 底层默认的硬核屏蔽词库
 const STOP_WORDS = new Set([
@@ -26,28 +26,40 @@ interface SphereNode {
 }
 
 // ✨ 新增：设置数据接口
+// ✨ v1.0.9 新增 uiLang:界面语言 auto(跟随设备/Obsidian)/zh/en
 interface MobilePluginSettings {
     customStopWords: string[];
     hotwordFolder: string;
     hotwordDays: number;
+    uiLang: string;
 }
 
 const DEFAULT_SETTINGS: MobilePluginSettings = {
     customStopWords: [],
     hotwordFolder: "",
-    hotwordDays: 30
+    hotwordDays: 30,
+    uiLang: "auto"
 };
 
 // 屏蔽词数量上限:防止词过多导致词云噪音与设置面板过长
 const MAX_STOP_WORDS = 50;
 
 // ✨ v1.0.6 界面双语：跟随 Obsidian 界面语言(zh=中文,其他=英文)
-function getLang(): 'zh' | 'en' {
-    const lang = (window.localStorage.getItem('language') || 'en').toLowerCase();
-    return lang.startsWith('zh') ? 'zh' : 'en';
+// ✨ v1.0.9 检测增强 + 手动切换:settings.uiLang 支持 auto/zh/en
+function detectLang(): 'zh' | 'en' {
+    // 三重信号:Obsidian 界面语言设置 → moment 语言 → 设备系统语言
+    const candidates = [
+        window.localStorage.getItem('language') || '',
+        moment.locale() || '',
+        navigator.language || ''
+    ];
+    for (const c of candidates) {
+        if (c && c.toLowerCase().startsWith('zh')) return 'zh';
+    }
+    return 'en';
 }
 
-function createI18n() {
+function createI18n(lang: 'zh' | 'en') {
     const zh = {
         settingsTitle: 'Thought Synapse (移动版) 设置',
         folder: '检索文件夹 (留空 = 全库)',
@@ -84,7 +96,6 @@ function createI18n() {
         removeAria: (w: string) => `Unblock ${w}`,
         msgDup: (w: string) => `"${w}" is already blocked`
     };
-    const lang = getLang();
     return lang === 'zh' ? zh : en;
 }
 type I18n = ReturnType<typeof createI18n>;
@@ -517,8 +528,17 @@ class MobileStatsSettingTab extends PluginSettingTab {
         const { containerEl } = this;
         containerEl.empty();
 
-        // ✨ v1.0.6 界面双语：跟随 Obsidian 界面语言自动切换
-        const t = createI18n();
+        // ✨ v1.0.9 右上角语言切换:auto 检测不可靠时,用户一键切换 EN/中文,选择被记住
+        const uiLang = this.plugin.settings.uiLang;
+        const lang: 'zh' | 'en' = uiLang === 'zh' || uiLang === 'en' ? uiLang : detectLang();
+        const t = createI18n(lang);
+
+        const langRow = containerEl.createDiv('ts-lang-row');
+        const toggle = langRow.createDiv('ts-lang-toggle');
+        const enOpt = toggle.createSpan({ text: 'EN', cls: 'ts-lang-opt' + (lang === 'en' ? ' is-active' : '') });
+        const zhOpt = toggle.createSpan({ text: '中文', cls: 'ts-lang-opt' + (lang === 'zh' ? ' is-active' : '') });
+        enOpt.onclick = () => { void this.switchLang('en'); };
+        zhOpt.onclick = () => { void this.switchLang('zh'); };
 
         new Setting(containerEl).setName(t.settingsTitle).setHeading();
 
@@ -638,5 +658,13 @@ class MobileStatsSettingTab extends PluginSettingTab {
         });
 
         renderTags();
+    }
+
+    // 切换界面语言:保存选择并整页重渲染
+    private async switchLang(lang: 'zh' | 'en') {
+        if (this.plugin.settings.uiLang === lang) return;
+        this.plugin.settings.uiLang = lang;
+        await this.plugin.saveSettings();
+        this.display();
     }
 }

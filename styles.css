@@ -1,3 +1,33 @@
+/* --- v1.0.9 右上角语言切换 --- */
+.ts-lang-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 4px;
+}
+.ts-lang-toggle {
+    display: inline-flex;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 999px;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+}
+.ts-lang-opt {
+    padding: 4px 14px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+.ts-lang-opt:hover { color: var(--text-normal); }
+.ts-lang-opt.is-active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
 /* --- 移动端文件栏寄生容器 --- */
 .ts-mobile-parasitic-container {
     width: 100%;
